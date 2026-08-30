@@ -74,14 +74,17 @@ jobs:
           $env:PATH = "$env:PATH;$env:USERPROFILE\go\bin"
           task build
 
+      - name: Install NSIS
+        shell: pwsh
+        run: choco install nsis -y --no-progress
+
       - name: Package NSIS installer
         shell: pwsh
         run: |
           $env:PATH = "$env:PATH;$env:USERPROFILE\go\bin"
-          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
-            $nsis = 'C:\Program Files (x86)\NSIS'
-            if (Test-Path "$nsis\makensis.exe") { $env:PATH = "$env:PATH;$nsis" }
-          }
+          $nsis = 'C:\Program Files (x86)\NSIS'
+          if (Test-Path "$nsis\makensis.exe") { $env:PATH = "$env:PATH;$nsis" }
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) { throw 'makensis not found after NSIS install' }
           task package
 
       - name: Rename release assets

@@ -30,7 +30,7 @@ type AppService struct {
 
 // Version 返回应用版本，用于前端展示（同时验证 Go ↔ Vue 调用链路）。
 func (a *AppService) Version() string {
-	return "0.1.0"
+	return "1.0.0"
 }
 
 // ProcessText 文本处理核心入口。预览与批量处理共用此函数，确保逻辑一致。

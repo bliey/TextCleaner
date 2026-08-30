@@ -33,6 +33,12 @@ Unicode true
 ####
 ## Include the wails tools
 ####
+
+# Override the defaults in wails_tools.nsh so installer metadata matches this release.
+!define INFO_PRODUCTVERSION "1.0.0"
+!define INFO_COMPANYNAME "TextCleaner"
+!define INFO_COPYRIGHT "© 2026, TextCleaner"
+
 !include "wails_tools.nsh"
 
 # The version information for this two must consist of 4 parts

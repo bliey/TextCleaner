@@ -1,0 +1,192 @@
+name: Release TextCleaner
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-web:
+    name: Build Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package Web asset
+        run: zip -r TextCleaner-Web.zip frontend/dist
+
+      - name: Upload Web artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TextCleaner-Web
+          path: TextCleaner-Web.zip
+
+  build-windows:
+    name: Build Windows (x64)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+
+      - name: Install task CLI
+        run: go install github.com/go-task/task/v3/cmd/task@latest
+
+      - name: Build executable
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:PATH;$env:USERPROFILE\go\bin"
+          task build
+
+      - name: Package NSIS installer
+        shell: pwsh
+        run: |
+          $env:PATH = "$env:PATH;$env:USERPROFILE\go\bin"
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            $nsis = 'C:\Program Files (x86)\NSIS'
+            if (Test-Path "$nsis\makensis.exe") { $env:PATH = "$env:PATH;$nsis" }
+          }
+          task package
+
+      - name: Rename release assets
+        shell: pwsh
+        run: |
+          Copy-Item bin/text-cleaner.exe TextCleaner-Windows-x64-portable.exe
+          Copy-Item bin/text-cleaner-amd64-installer.exe TextCleaner-Windows-x64.exe
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: TextCleaner-Windows
+          path: |
+            TextCleaner-Windows-x64.exe
+            TextCleaner-Windows-x64-portable.exe
+
+  build-macos:
+    name: Build macOS (${{ matrix.arch_name }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: arm64
+            arch_name: arm64
+          - goarch: amd64
+            arch_name: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install wails3 CLI
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.15
+
+      - name: Install task CLI
+        run: go install github.com/go-task/task/v3/cmd/task@latest
+
+      - name: Build executable (${{ matrix.goarch }})
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          task build ARCH=${{ matrix.goarch }}
+
+      - name: Package .app bundle
+        run: |
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          task package ARCH=${{ matrix.goarch }}
+
+      - name: Archive .app as zip
+        run: |
+          cd bin
+          ditto -c -k --keepParent text-cleaner.app ../TextCleaner-macOS-${{ matrix.arch_name }}.zip
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TextCleaner-macOS-${{ matrix.arch_name }}
+          path: TextCleaner-macOS-${{ matrix.arch_name }}.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: [build-web, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -la release
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TextCleaner ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          files: release/*
+          body: |
+            TextCleaner ${{ github.ref_name }}
+
+            ## 包含内容
+            - **Windows**：x64 主程序（NSIS 安装程序）与便携版
+            - **macOS**：Apple Silicon（arm64）与 Intel（x64）应用
+            - **Web**：网页版静态资源
+
+            ## 变更
+            - 新增 macOS 构建支持（arm64 / x64）
+            - 清理与目标平台无关的构建配置（Android / iOS / Linux / Docker）
+            - 移除失效的 MSIX 打包配置与残留任务
+            - 统一应用版本为 1.0.0
+            - 新增 GitHub Actions 自动构建与 Release 发布流程

@@ -3,6 +3,9 @@ import { ref } from 'vue'
 import { useSettings } from '../composables/useSettings'
 import { useFiles } from '../composables/useFiles'
 import { useI18n } from '../i18n'
+import alipayQr from '../assets/alipay.png'
+import wechatQr from '../assets/wechat.png'
+import paypalQr from '../assets/paypal.png'
 
 const { settings, persist, reset, saveError } = useSettings()
 // 会话内的“包含子文件夹”是临时开关，设置页改的是它的默认值：
@@ -13,7 +16,18 @@ const { t } = useI18n()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const savedHint = ref(false)
+const sponsorQr = ref<{ name: string; src: string } | null>(null)
 let hintTimer: ReturnType<typeof setTimeout> | null = null
+
+const sponsors = [
+  { key: 'alipay', nameKey: 'settings.sponsorAlipay', src: alipayQr },
+  { key: 'wechat', nameKey: 'settings.sponsorWechat', src: wechatQr },
+  { key: 'paypal', nameKey: 'settings.sponsorPaypal', src: paypalQr },
+] as const
+
+function showSponsor(name: string, src: string) {
+  sponsorQr.value = sponsorQr.value?.src === src ? null : { name, src }
+}
 
 async function onSave() {
   await persist()
@@ -93,6 +107,30 @@ function onClose() {
             v-model.number="settings.maxConcurrency"
             class="num-input"
           />
+        </div>
+
+        <!-- 赞助：参考 picocrypt-wails，点击支付方式显示二维码，同时只显示一张。 -->
+        <div class="sponsor-block">
+          <div class="row-main">
+            <span class="row-label">{{ t('settings.sponsor') }}</span>
+            <span class="row-desc">{{ t('settings.sponsorDesc') }}</span>
+          </div>
+          <div class="sponsor-links">
+            <button
+              v-for="item in sponsors"
+              :key="item.key"
+              class="sponsor-link"
+              :class="{ 'is-active': sponsorQr?.src === item.src }"
+              type="button"
+              @click="showSponsor(t(item.nameKey), item.src)"
+            >
+              {{ t(item.nameKey) }}
+            </button>
+          </div>
+          <div v-if="sponsorQr" class="sponsor-preview">
+            <img :src="sponsorQr.src" :alt="sponsorQr.name" />
+            <span>{{ sponsorQr.name }}</span>
+          </div>
         </div>
 
         <p v-if="saveError" class="save-error">⚠ {{ saveError }}</p>
@@ -199,6 +237,48 @@ function onClose() {
 .num-input {
   width: 90px;
   flex: 0 0 auto;
+}
+.sponsor-block {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
+}
+.sponsor-links {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.sponsor-link {
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  cursor: pointer;
+}
+.sponsor-link:hover,
+.sponsor-link.is-active {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.sponsor-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 160px;
+  margin-top: 12px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.sponsor-preview img {
+  width: 150px;
+  height: 150px;
+  padding: 4px;
+  object-fit: contain;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 .save-error {
   color: var(--danger);

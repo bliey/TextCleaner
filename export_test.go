@@ -84,6 +84,15 @@ func TestExportFiles(t *testing.T) {
 	}
 }
 
+func TestChooseDialogNoApp(t *testing.T) {
+	svc := &AppService{} // app 为 nil，走防御分支
+	if _, err := svc.ChooseDirectory(); err == nil {
+		t.Fatal("ChooseDirectory: expected error when app not initialized")
+	}
+	if _, err := svc.ChooseSavePath("x.txt"); err == nil {
+		t.Fatal("ChooseSavePath: expected error when app not initialized")
+	}
+}
 func TestExportFilesRejectsTraversal(t *testing.T) {
 	dir := t.TempDir()
 	svc := &AppService{}

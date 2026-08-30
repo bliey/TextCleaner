@@ -18,6 +18,42 @@ type ExportFile struct {
 	Data string `json:"data"`
 }
 
+// ChooseDirectory 弹出系统“选择文件夹”对话框，返回所选目录（取消时返回空串）。
+func (a *AppService) ChooseDirectory() (string, error) {
+	if a.app == nil {
+		return "", errors.New("应用未初始化")
+	}
+	result, err := a.app.Dialog.OpenFile().
+		CanChooseDirectories(true).
+		CanChooseFiles(false).
+		SetTitle("选择导出文件夹").
+		PromptForSingleSelection()
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "cancel") {
+			return "", nil // 用户取消，视为无操作
+		}
+		return "", err
+	}
+	return result, nil
+}
+
+// ChooseSavePath 弹出系统“保存文件”对话框，返回所选路径（取消时返回空串）。
+func (a *AppService) ChooseSavePath(defaultName string) (string, error) {
+	if a.app == nil {
+		return "", errors.New("应用未初始化")
+	}
+	result, err := a.app.Dialog.SaveFile().
+		SetFilename(defaultName).
+		PromptForSingleSelection()
+	if err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "cancel") {
+			return "", nil
+		}
+		return "", err
+	}
+	return result, nil
+}
+
 // SaveFileBytes 将 base64 内容写入指定绝对路径（用于单文件 / ZIP 导出）。
 // 目标路径由系统“保存文件”对话框返回，用户已确认可覆盖。
 func (a *AppService) SaveFileBytes(path string, dataBase64 string) error {

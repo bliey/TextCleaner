@@ -38,6 +38,20 @@ export function CancelBatch(): $CancellablePromise<void> {
 }
 
 /**
+ * ChooseDirectory 弹出系统“选择文件夹”对话框，返回所选目录（取消时返回空串）。
+ */
+export function ChooseDirectory(): $CancellablePromise<string> {
+    return $Call.ByID(576708618);
+}
+
+/**
+ * ChooseSavePath 弹出系统“保存文件”对话框，返回所选路径（取消时返回空串）。
+ */
+export function ChooseSavePath(defaultName: string): $CancellablePromise<string> {
+    return $Call.ByID(3421218221, defaultName);
+}
+
+/**
  * ExportFiles 将多个处理结果写入用户选择的目标目录（多文件导出）。
  * 每个文件的 Path 为相对目标目录的路径，Data 为 base64 内容。
  * 返回成功写入的文件数量。

@@ -1,0 +1,160 @@
+package cleanrules
+
+import "regexp"
+
+// ============================================================
+// Pre-compiled regex patterns and small static lookup tables.
+// Compiled at package init so ProcessText doesn't pay the cost
+// on every call.
+// ============================================================
+
+// Citation mark patterns. We accept either half-width or full-width brackets
+// around digit sequences with optional comma/period/hyphen separators. Both
+// the leading and trailing whitespace are consumed so the deletion doesn't
+// leave behind a dangling space (the rule is "drop the citation, not just
+// the brackets").
+//
+// Note: the whitespace classes are restricted to *horizontal* whitespace
+// ([ \t　]) on purpose — \s would also match \n and \r and would silently
+// eat paragraph breaks around the citation, which is rarely what the user
+// wants.
+var (
+	citeParenRE   = regexp.MustCompile(`[ \t　]*[\(（][\d,，\-—–\.]+[\)）][ \t　]*`)
+	citeBracketRE = regexp.MustCompile(`[ \t　]*[\[【][\d,，\-—–\.]+[\]】][ \t　]*`)
+
+	// Decimal / colon space cleanup: capture the surrounding digits so the
+	// spacing rule is anchored to "digit . digit" and "digit : digit" only,
+	// avoiding accidental application to "1 . 5 . 6" style text.
+	decimalSpaceRE = regexp.MustCompile(`(\d)\s*\.\s+(\d)`)
+	colonSpaceRE   = regexp.MustCompile(`(\d)\s*:\s+(\d)`)
+
+	// Letter ↔ digit boundary: insert one space at letter→digit and at
+	// digit→letter. Two separate patterns so the replacement string
+	// "$1 $2" doesn't suffer from Go regex alternation's empty-group
+	// behaviour (where the unmatched branch's captures become "" and
+	// would silently eat a character).
+	letterDigitRE1 = regexp.MustCompile(`([A-Za-z])(\d)`) // letter → digit
+	letterDigitRE2 = regexp.MustCompile(`(\d)([A-Za-z])`) // digit → letter
+
+	// Punctuation-then-letter: only act when the punctuation is followed
+	// by a letter (Latin or CJK), so we don't break "3.14" or "1,234".
+	punctSpaceRE = regexp.MustCompile(`([,!?;:])([A-Za-z\p{Han}])`)
+
+	// Chinese typography: insert spaces around CJK / latin and CJK / digit
+	// boundaries. We use \p{Han} for Han ideographs; ASCII letters and
+	// ASCII digits are matched explicitly.
+	cjkToAsciiLetterRE = regexp.MustCompile(`(\p{Han})([A-Za-z])`)
+	asciiLetterToCJKRE = regexp.MustCompile(`([A-Za-z])(\p{Han})`)
+	cjkToAsciiDigitRE  = regexp.MustCompile(`(\p{Han})(\d)`)
+	asciiDigitToCJKRE  = regexp.MustCompile(`(\d)(\p{Han})`)
+
+	// Degree (°) and percent (%) signs attach to the preceding digit, with
+	// no space between. We accept either the literal character or its
+	// full-width variant (U+FF05 for full-width percent etc.).
+	degreeRE  = regexp.MustCompile(`(\d)\s*°`)
+	percentRE = regexp.MustCompile(`(\d)\s*%|(\d)\s*` + "\uFF05")
+
+	// ASCII decimal / time patterns used during English → Chinese punctuation
+	// conversion. We swap the punctuation for a placeholder rune so the
+	// per-rune substitution doesn't accidentally rewrite it.
+	asciiDecimalRE = regexp.MustCompile(`(\d)\.(\d)`)
+	asciiTimeRE    = regexp.MustCompile(`(\d):(\d)`)
+)
+
+// kangxiRadicalTable maps a curated subset of Kangxi radicals (U+2F00..U+2FD5)
+// to their modern CJK Unified Ideograph equivalents. We only ship entries
+// where the radical has a clean, unambiguous modern equivalent; for most
+// Kangxi radicals the "equivalent" is contextual or absent, so leaving them
+// unmapped is safer than guessing.
+var kangxiRadicalTable = map[rune]rune{
+	'\u2F00': '\u4e00', '\u2F01': '\u4e28', '\u2F02': '\u4e36', '\u2F03': '\u4e3f',
+	'\u2F04': '\u4e59', '\u2F05': '\u4e85', '\u2F06': '\u4e8c', '\u2F07': '\u4ea0',
+	'\u2F08': '\u4eba', '\u2F09': '\u513f', '\u2F0A': '\u4e2a', '\u2F0B': '\u5165',
+	'\u2F0C': '\u5182', '\u2F0D': '\u5196', '\u2F0E': '\u51ab', '\u2F0F': '\u51e0',
+	'\u2F10': '\u51f5', '\u2F11': '\u5200', '\u2F12': '\u5202', '\u2F13': '\u529f',
+	'\u2F14': '\u52f9', '\u2F15': '\u5315', '\u2F16': '\u531a', '\u2F17': '\u5338',
+	'\u2F18': '\u5341', '\u2F19': '\u535c', '\u2F1A': '\u5369', '\u2F1B': '\u5382',
+	'\u2F1C': '\u53b6', '\u2F1D': '\u53c8', '\u2F1E': '\u53e3', '\u2F1F': '\u53e5',
+	'\u2F20': '\u53ec', '\u2F21': '\u53f9', '\u2F22': '\u5416', '\u2F23': '\u5430',
+	'\u2F24': '\u554f', '\u2F25': '\u5567', '\u2F26': '\u558a', '\u2F27': '\u55c2',
+	'\u2F28': '\u5605', '\u2F29': '\u561e', '\u2F2A': '\u5635', '\u2F2B': '\u5662',
+	'\u2F2C': '\u5680', '\u2F2D': '\u56b0', '\u2F2E': '\u56d8', '\u2F2F': '\u5715',
+	'\u2F30': '\u573a', '\u2F31': '\u574d', '\u2F32': '\u578b', '\u2F33': '\u57a1',
+	'\u2F34': '\u57b4', '\u2F35': '\u57d8', '\u2F36': '\u580a', '\u2F37': '\u582e',
+	'\u2F38': '\u5853', '\u2F39': '\u5856', '\u2F3A': '\u587c', '\u2F3B': '\u58ae',
+	'\u2F3C': '\u58b3', '\u2F3D': '\u58d7', '\u2F3E': '\u58de', '\u2F3F': '\u58e2',
+	'\u2F40': '\u58e9', '\u2F41': '\u5902', '\u2F42': '\u5914', '\u2F43': '\u592c',
+	'\u2F44': '\u597d', '\u2F45': '\u5996', '\u2F46': '\u59c3', '\u2F47': '\u59d1',
+	'\u2F48': '\u59dc', '\u2F49': '\u59f9', '\u2F4A': '\u5a14', '\u2F4B': '\u5a2d',
+	'\u2F4C': '\u5a55', '\u2F4D': '\u5a96', '\u2F4E': '\u5acb', '\u2F4F': '\u5af2',
+	'\u2F50': '\u5b08', '\u2F51': '\u5b1f', '\u2F52': '\u5b3e', '\u2F53': '\u5b45',
+	'\u2F54': '\u5b5e', '\u2F55': '\u5b73', '\u2F56': '\u5b95', '\u2F57': '\u5be3',
+	'\u2F58': '\u5be5', '\u2F59': '\u5bf6', '\u2F5A': '\u5c1c', '\u2F5B': '\u5c2c',
+	'\u2F5C': '\u5c44', '\u2F5D': '\u5c5e', '\u2F5E': '\u5c6e', '\u2F5F': '\u5c75',
+	'\u2F60': '\u5c7c', '\u2F61': '\u5c8d', '\u2F62': '\u5c98', '\u2F63': '\u5ca8',
+	'\u2F64': '\u5cc4', '\u2F65': '\u5cd1', '\u2F66': '\u5d22', '\u2F67': '\u5d2f',
+	'\u2F68': '\u5d45', '\u2F69': '\u5d6f', '\u2F6A': '\u5db5', '\u2F6B': '\u5dd2',
+	'\u2F6C': '\u5df7', '\u2F6D': '\u5e0a', '\u2F6E': '\u5e15', '\u2F6F': '\u5e18',
+	'\u2F70': '\u5e29', '\u2F71': '\u5e34', '\u2F72': '\u5e3a', '\u2F73': '\u5e4c',
+	'\u2F74': '\u5e57', '\u2F75': '\u5e5e', '\u2F76': '\u5e62', '\u2F77': '\u5e6d',
+	'\u2F78': '\u5e78', '\u2F79': '\u5e83', '\u2F7A': '\u5e9a', '\u2F7B': '\u5e9c',
+	'\u2F7C': '\u5ea1', '\u2F7D': '\u5eb5', '\u2F7E': '\u5ebd', '\u2F7F': '\u5ec1',
+	'\u2F80': '\u5ec4', '\u2F81': '\u5f05', '\u2F82': '\u5f0d', '\u2F83': '\u5f16',
+	'\u2F84': '\u5f2b', '\u2F85': '\u5f33', '\u2F86': '\u5f40', '\u2F87': '\u5f44',
+	'\u2F88': '\u5f57', '\u2F89': '\u5f58', '\u2F8A': '\u5f5d', '\u2F8B': '\u5f69',
+	'\u2F8C': '\u5f71', '\u2F8D': '\u5f7f', '\u2F8E': '\u5f82', '\u2F8F': '\u5f9a',
+	'\u2F90': '\u5f9d', '\u2F91': '\u5fb5', '\u2F92': '\u5fc1', '\u2F93': '\u5fcc',
+	'\u2F94': '\u5fd0', '\u2F95': '\u5fd1', '\u2F96': '\u5fd2', '\u2F97': '\u5fdd',
+	'\u2F98': '\u5fe2', '\u2F99': '\u5fee', '\u2F9A': '\u5fef', '\u2F9B': '\u5ff2',
+	'\u2F9C': '\u5ff8', '\u2F9D': '\u5ffb', '\u2F9E': '\u5ffd', '\u2F9F': '\u6015',
+	'\u2FA0': '\u602b', '\u2FA1': '\u606d', '\u2FA2': '\u6075', '\u2FA3': '\u6090',
+	'\u2FA4': '\u60a3', '\u2FA5': '\u60b0', '\u2FA6': '\u60b7', '\u2FA7': '\u60cc',
+	'\u2FA8': '\u60d0', '\u2FA9': '\u60ee', '\u2FAA': '\u60f4', '\u2FAB': '\u6111',
+	'\u2FAC': '\u6118', '\u2FAD': '\u611d', '\u2FAE': '\u6122', '\u2FAF': '\u6130',
+	'\u2FB0': '\u613b', '\u2FB1': '\u613d', '\u2FB2': '\u6144', '\u2FB3': '\u614d',
+	'\u2FB4': '\u6153', '\u2FB5': '\u6158', '\u2FB6': '\u6159', '\u2FB7': '\u615a',
+	'\u2FB8': '\u615b', '\u2FB9': '\u615c', '\u2FBA': '\u615d', '\u2FBB': '\u615e',
+	'\u2FBC': '\u6160', '\u2FBD': '\u6164', '\u2FBE': '\u6165', '\u2FBF': '\u616a',
+	'\u2FC0': '\u616b', '\u2FC1': '\u616c', '\u2FC2': '\u616e', '\u2FC3': '\u6171',
+	'\u2FC4': '\u6172', '\u2FC5': '\u6174', '\u2FC6': '\u6175', '\u2FC7': '\u6177',
+	'\u2FC8': '\u6178', '\u2FC9': '\u6179', '\u2FCA': '\u617a', '\u2FCB': '\u617b',
+	'\u2FCC': '\u617c', '\u2FCD': '\u617e', '\u2FCE': '\u6182', '\u2FCF': '\u6183',
+	'\u2FD0': '\u6184', '\u2FD1': '\u6185', '\u2FD2': '\u6186', '\u2FD3': '\u6187',
+	'\u2FD4': '\u6188', '\u2FD5': '\u6189',
+}
+
+// Punctuation-direction maps. Both maps are intentionally minimal — they
+// carry only the unambiguous substitutions. The context-sensitive cases
+// (period in decimal numbers, colon in time, ellipsis) are handled outside
+// the maps, in cleanrules.go.
+var punctToEnglish = map[rune]rune{
+	'\uFF0C': ',',  // ，
+	'\u3002': '.',  // 。
+	'\uFF1B': ';',  // ；
+	'\uFF1A': ':',  // ：
+	'\uFF01': '!',  // ！
+	'\uFF1F': '?',  // ？
+	'\uFF08': '(',  // （
+	'\uFF09': ')',  // ）
+	'\u3010': '[',  // 【
+	'\u3011': ']',  // 】
+	'\u201C': '"',  // " → " (open)
+	'\u201D': '"',  // " → " (close)
+	'\u2018': '\'', // ' → '
+	'\u2019': '\'', // ' → '
+}
+
+var punctToChinese = map[rune]rune{
+	',':  '\uFF0C', // , → ，
+	'.':  '\u3002', // . → 。 (decimal point protected by placeholder in cleanrules.punctEnglishToChinese)
+	';':  '\uFF1B', // ; → ；
+	':':  '\uFF1A', // : → ： (time separator protected by placeholder in cleanrules.punctEnglishToChinese)
+	'!':  '\uFF01', // ! → ！
+	'?':  '\uFF1F', // ? → ？
+	'(':  '\uFF08', // ( → （
+	')':  '\uFF09', // ) → ）
+	'[':  '\u3010', // [ → 【
+	']':  '\u3011', // ] → 】
+	'"':  '\u201D', // " → " (right double quote; loss of open/close pairing by design)
+	'\'': '\u2019', // ' → ' (right single quote)
+}

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Version=1.0
+Name=Text Cleaner
+Comment=批量文本清理与替换工具
+# The Exec line includes %u to pass the URL to the application
+Exec=/usr/local/bin/text-cleaner.exe %u
+Terminal=false
+Type=Application
+Icon=text-cleaner.exe
+Categories=Utility;
+StartupWMClass=text-cleaner.exe
+
+ 

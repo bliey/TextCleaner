@@ -10,7 +10,7 @@ export type { BatchProgress, BatchSummary }
 
 const { settings } = useSettings()
 const outputEncoding = ref<'keep' | 'utf-8' | 'utf-8-bom'>('keep')
-const outputFormat = ref<OutputFormat>('zip')
+const outputFormat = ref<OutputFormat>(isDesktop() ? 'files' : 'zip')
 const running = ref(false)
 const progress = ref<BatchProgress | null>(null)
 const summary = ref<BatchSummary | null>(null)

@@ -2,6 +2,7 @@
 import SectionCard from './SectionCard.vue'
 import { useBatch } from '../composables/useBatch'
 import { useInteraction } from '../composables/useInteraction'
+import { isDesktop } from '../core/env'
 import { useI18n } from '../i18n'
 
 const { outputFormat, outputEncoding, maxConcurrency } = useBatch()
@@ -13,20 +14,42 @@ const { t } = useI18n()
   <SectionCard :title="t('out.title')" :hint="t('out.hint')" :locked="locked">
     <div class="sub-block">
       <div class="group-title">{{ t('out.exportMode') }}</div>
-      <label class="mode-option">
-        <input type="radio" value="zip" v-model="outputFormat" name="outputFormat" />
-        <div class="mode-text">
-          <div class="mode-name">{{ t('out.downloadZip') }}</div>
-          <div class="mode-desc">{{ t('out.downloadZipDesc') }}</div>
-        </div>
-      </label>
-      <label class="mode-option">
-        <input type="radio" value="files" v-model="outputFormat" name="outputFormat" />
-        <div class="mode-text">
-          <div class="mode-name">{{ t('out.downloadFiles') }}</div>
-          <div class="mode-desc">{{ t('out.downloadFilesDesc') }}</div>
-        </div>
-      </label>
+
+      <!-- 桌面版：原生导出到文件夹（默认）+ ZIP（可选） -->
+      <template v-if="isDesktop()">
+        <label class="mode-option">
+          <input type="radio" value="files" v-model="outputFormat" name="outputFormat" />
+          <div class="mode-text">
+            <div class="mode-name">{{ t('out.exportFolder') }}</div>
+            <div class="mode-desc">{{ t('out.exportFolderDesc') }}</div>
+          </div>
+        </label>
+        <label class="mode-option">
+          <input type="radio" value="zip" v-model="outputFormat" name="outputFormat" />
+          <div class="mode-text">
+            <div class="mode-name">{{ t('out.downloadZip') }}</div>
+            <div class="mode-desc">{{ t('out.downloadZipDesc') }}</div>
+          </div>
+        </label>
+      </template>
+
+      <!-- Web 版：ZIP（默认）+ 逐个下载文件 -->
+      <template v-else>
+        <label class="mode-option">
+          <input type="radio" value="zip" v-model="outputFormat" name="outputFormat" />
+          <div class="mode-text">
+            <div class="mode-name">{{ t('out.downloadZip') }}</div>
+            <div class="mode-desc">{{ t('out.downloadZipDesc') }}</div>
+          </div>
+        </label>
+        <label class="mode-option">
+          <input type="radio" value="files" v-model="outputFormat" name="outputFormat" />
+          <div class="mode-text">
+            <div class="mode-name">{{ t('out.downloadFiles') }}</div>
+            <div class="mode-desc">{{ t('out.downloadFilesDesc') }}</div>
+          </div>
+        </label>
+      </template>
     </div>
 
     <div class="sub-block">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from '../i18n'
 import type { PendingPlan } from '../composables/useBatch'
+import { isDesktop } from '../core/env'
 
 const { t } = useI18n()
 const props = defineProps<{ plan: PendingPlan }>()
@@ -23,7 +24,7 @@ const emit = defineEmits<{ (e: 'confirm'): void; (e: 'cancel'): void }>()
         <div class="row">
           <span class="label">{{ t('plan.export') }}</span>
           <span class="value mode">
-            {{ props.plan.outputFormat === 'zip' ? t('out.downloadZip') : t('out.downloadFiles') }}
+            {{ props.plan.outputFormat === 'zip' ? t('out.downloadZip') : (isDesktop() ? t('out.exportFolder') : t('out.downloadFiles')) }}
           </span>
         </div>
         <div class="row privacy">

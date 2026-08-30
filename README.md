@@ -23,19 +23,3 @@ https://bliey.github.io/TextCleaner/
 ## 隐私
 
 所有文件均在浏览器本地处理，不会上传到服务器。
-
-## 本地开发
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-构建：
-
-```bash
-npm run build
-```
-
-推送到 `main` 后，GitHub Actions 会自动部署到 GitHub Pages。

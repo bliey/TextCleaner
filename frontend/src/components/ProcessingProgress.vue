@@ -3,7 +3,7 @@ import { ref } from 'vue'
 import SectionCard from './SectionCard.vue'
 import { useBatch } from '../composables/useBatch'
 
-const { running, progress, summary, errorMsg, downloadReady, downloadResults, cancel, clearResults } = useBatch()
+const { running, progress, summary, errorMsg, exportReady, exportResults, cancel, clearResults } = useBatch()
 const showErrors = ref(false)
 
 function pct(p: { done: number; total: number } | null): number {
@@ -18,7 +18,7 @@ const failedList = () => (summary.value?.results ?? []).filter((result) => !resu
 </script>
 
 <template>
-  <SectionCard title="处理进度" hint="浏览器本地执行 · 可取消">
+  <SectionCard title="处理进度" hint="本地执行 · 可取消">
     <div v-if="!running && !summary && !errorMsg" class="muted">
       点击底部“开始批量处理”后，这里显示实时进度与结果。
     </div>
@@ -38,7 +38,7 @@ const failedList = () => (summary.value?.results ?? []).filter((result) => !resu
         <span class="pill pill-ok">成功 {{ summary.succeeded }}</span>
         <span class="pill pill-bad">失败 {{ summary.failed }}</span>
         <span class="spacer" />
-        <button v-if="downloadReady" class="btn btn-sm btn-primary" @click="downloadResults">下载结果</button>
+        <button v-if="exportReady" class="btn btn-sm btn-primary" @click="exportResults">导出结果</button>
         <button class="btn btn-sm" @click="clearResults">清除</button>
       </div>
       <p v-if="summary.failed > 0" class="muted">
